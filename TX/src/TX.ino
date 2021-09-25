@@ -68,18 +68,11 @@ typedef struct
   unsigned int x2;
   unsigned int y2;
 }
-analogsDef;
-analogsDef Analogs;
+uint_joysticks;
 
-typedef struct
-{
-  unsigned int x1;
-  unsigned int y1;
-  unsigned int x2;
-  unsigned int y2;
-}
-analogsBrutoDef;
-analogsBrutoDef AnalogsBruto;
+uint_joysticks AnalogsBruto;
+uint_joysticks AnalogsNonLinear;
+uint_joysticks Analogs;
 
 typedef struct
 {
@@ -668,28 +661,32 @@ void readAnalogs()
   unsigned int temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[0][i];
   AnalogsBruto.x1 = temp4 / nFilters;
-  Analogs.x1 = map(normalize(AnalogsBruto.x1, ajMin[0], ajMax[0]), ajMin[0], ajMax[0], 0, 255);
+  AnalogsNonLinear.x1 = map(normalize(AnalogsBruto.x1, ajMin[0], ajMax[0]), ajMin[0], ajMax[0], 0, 255);
+  Analogs.x1 = compensateNonLiniarity(0, AnalogsNonLinear.x1);
   TX_Pack.x1 = map(Analogs.x1, 0, 255, saida[1][0], saida[0][0]);
 
   filters[1][filterIndex] = analogRead(inputY1);
   temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[1][i];
   AnalogsBruto.y1 = temp4 / nFilters;
-  Analogs.y1 = map(normalize(AnalogsBruto.y1, ajMin[1], ajMax[1]), ajMin[1], ajMax[1], 0, 255);
+  AnalogsNonLinear.y1 = map(normalize(AnalogsBruto.y1, ajMin[1], ajMax[1]), ajMin[1], ajMax[1], 0, 255);
+  Analogs.y1 = compensateNonLiniarity(1, AnalogsNonLinear.y1);
   TX_Pack.y1 = map(Analogs.y1, 0, 255, saida[1][1], saida[0][1]);
   
   filters[2][filterIndex] = analogRead(inputX2);
   temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[2][i];
   AnalogsBruto.x2 = temp4 / nFilters; 
-  Analogs.x2 = map(normalize(AnalogsBruto.x2, ajMin[2], ajMax[2]), ajMin[2], ajMax[2], 0, 255);
+  AnalogsNonLinear.x2 = map(normalize(AnalogsBruto.x2, ajMin[2], ajMax[2]), ajMin[2], ajMax[2], 0, 255);
+  Analogs.x2 = compensateNonLiniarity(2, AnalogsNonLinear.x2);
   TX_Pack.x2 = map(Analogs.x2, 0, 255, saida[1][2], saida[0][2]);
   
   filters[3][filterIndex] = analogRead(inputY2);
   temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[3][i];
   AnalogsBruto.y2 = temp4 / nFilters;
-  Analogs.y2 = map(normalize(AnalogsBruto.y2, ajMin[3], ajMax[3]), ajMin[3], ajMax[3], 0, 255);
+  AnalogsNonLinear.y2 = map(normalize(AnalogsBruto.y2, ajMin[3], ajMax[3]), ajMin[3], ajMax[3], 0, 255);
+  Analogs.y2 = compensateNonLiniarity(3, AnalogsNonLinear.y2);
   TX_Pack.y2 = map(Analogs.y2, 0, 255, saida[1][3], saida[0][3]);
 
   /*Serial.print(AnalogsBruto.x1);
@@ -948,4 +945,31 @@ void drawValue2(byte valor)
     u8g.setPrintPos(1, 34);
     u8g.print(valor);
   } while(u8g.nextPage());
+}
+
+#define numbOfMappingPoints 5
+#define numbOfMappingInputs 4
+unsigned int stepSize = 1024/(numbOfMappingPoints-1);
+
+int inputPoints[numbOfMappingInputs][numbOfMappingPoints] = {
+  {0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0}
+};
+
+// int asd[] = {0,1,2};
+
+unsigned int compensateNonLiniarity(byte p, unsigned int val)
+{
+  byte pointIdx = 0;
+  while(true)
+  {
+    pointIdx++;
+
+    if(val < inputPoints[p][pointIdx])
+    {
+      return map(val, inputPoints[p][pointIdx-1], inputPoints[p][pointIdx], stepSize*(pointIdx-1), stepSize*pointIdx);
+    }
+  }
 }
