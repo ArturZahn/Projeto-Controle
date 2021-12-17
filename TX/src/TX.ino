@@ -252,9 +252,9 @@ void sendPack() {
         iSignal = 0;
         signalSum = 0;
 
-        Serial.print(signalSum);
-        Serial.print(" ");
-        Serial.println(ratio);
+        //Serial.print(signalSum);
+        //Serial.print(" ");
+        //Serial.println(ratio);
       }
     }
 }
@@ -267,11 +267,11 @@ ISR(TIMER2_OVF_vect) {
     if(menuPrincipal) if(lastVoltage != RX_Pack.batteryVoltage || lastRatio != ratio || lastInternalBattery != internalBattery)
     {
       refreshMenuPrincipal();
-      //Serial.println("refresh yep");
+      ////Serial.println("refresh yep");
     }/*
     else
     {
-      Serial.println("refresh no");
+      //Serial.println("refresh no");
     }*/
   }
 }
@@ -341,7 +341,7 @@ u8g.firstPage();
   byte val_1;
   byte val_2;
 
-  Serial.println("ajuste min e max: ");
+  //Serial.println("ajuste min e max: ");
   for(byte i = 0; i <= 14; i+=4)
   {
     val_1 = EEPROM.read(i);
@@ -354,27 +354,27 @@ u8g.firstPage();
     val = (val_1 + (int)(val_2 << 8));
     ajMax[i/4] = val;
 
-    Serial.print(ajMin[i/4]);
-    Serial.print(" ");
-    Serial.println(ajMax[i/4]);
+    //Serial.print(ajMin[i/4]);
+    //Serial.print(" ");
+    //Serial.println(ajMax[i/4]);
   }
   
-  Serial.println("\r\nsaida");
+  //Serial.println("\r\nsaida");
   for(int i = 0; i < 4; i++)
   {
     for(int j = 0; j < 2; j++)
     {
       saida[j][i] = EEPROM.read((i*2)+j+16);
-      Serial.print(saida[j][i]);
-      Serial.print(" ");
+      //Serial.print(saida[j][i]);
+      //Serial.print(" ");
     }
-    Serial.println("");
+    //Serial.println("");
   }
-  Serial.println("");
+  //Serial.println("");
   
 
   printf_begin();
-  printf("TX");
+  //printf("TX");
 
   radio.begin();
   radio.openWritingPipe(pipes[0]);
@@ -388,7 +388,7 @@ u8g.firstPage();
   radio.setRetries(0, 15);                // Smallest time between retries, max no. of retries
   radio.setAutoAck(true) ;
 
-  radio.printDetails();
+  // radio.printDetails();
 
   radio.powerUp();
   radio.startListening();
@@ -432,31 +432,46 @@ u8g.firstPage();
 unsigned long LM = 0;
 void loop()
 {
-  Serial.print("Barco: ");
-  Serial.print(RX_Pack.batteryVoltage);
-  Serial.print(" Controle: ");
-  Serial.print(internalBattery);
-  Serial.print(" Sinal: ");
-  Serial.println(ratio);
+////  Serial.print("Barco: ");
+////  Serial.print(RX_Pack.batteryVoltage);
+////  Serial.print(" Controle: ");
+////  Serial.print(internalBattery);
+////  Serial.print(" Sinal: ");
+////  Serial.println(ratio);
   readAnalogs();
   readButtons();
   readBattery();
 
   if(bitRead(botoes, botEnter)==1) buttonPressed();
   
-  /*Serial.print(botoes, BIN);
-  Serial.print(" ");
-  Serial.print(ratio);
-  Serial.print(" ");
-  Serial.println(RX_Pack.batteryVoltage);*/
+  ///*Serial.print(botoes, BIN);
+  //Serial.print(" ");
+  //Serial.print(ratio);
+  //Serial.print(" ");
+  //Serial.println(RX_Pack.batteryVoltage);*/
   
-  //Serial.println(micros() - LM);
+  ////Serial.println(micros() - LM);
   
-  /*Serial.print(botoes, BIN);
-  Serial.print(" x1 " + (String)TX_Pack.x1);
-  Serial.print(" y1 " + (String)TX_Pack.y1);
-  Serial.print(" x2 " + (String)TX_Pack.x2);
-  Serial.println(" y2 " + (String)TX_Pack.y2);*/
+  ///*Serial.print(botoes, BIN);
+  //Serial.print(" x1 " + (String)TX_Pack.x1);
+  //Serial.print(" y1 " + (String)TX_Pack.y1);
+  //Serial.print(" x2 " + (String)TX_Pack.x2);
+  //Serial.println(" y2 " + (String)TX_Pack.y2);*/
+
+//  
+  Serial.print(TX_Pack.x1);
+  Serial.print(" ");
+  Serial.print(TX_Pack.y1);
+  Serial.print(" ");
+  Serial.print(TX_Pack.x2);
+  Serial.print(" ");
+  Serial.print(TX_Pack.y2);
+  Serial.print(" ");
+  Serial.print(255);
+  Serial.print(" ");
+  Serial.println(0);
+
+  
   LM = micros();
   sendPack();
 }
@@ -586,11 +601,11 @@ byte pag(byte menu, byte item)
       u8g.drawLine(99, 6, 100, 5); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(101, 4, 102, 4); u8g.drawLine(108, 4, 109, 4);   u8g.drawLine(103, 3, 107, 3); // signal icon //u8g.drawLine(99, 6, 101, 4); u8g.drawLine(109, 4, 111, 6);   u8g.drawLine(102, 3, 108, 3); // signal icon
       u8g.setPrintPos(113, 13); u8g.print(ratio); // signal indicator*/
       
-    //Serial.print("A2");
+    ////Serial.print("A2");
     } while(u8g.nextPage());
 
     //if(menu==)
-    Serial.println(menu);
+    //Serial.println(menu);
   }
   else if(menu == 1)
   {
@@ -658,6 +673,98 @@ int normalize(int value, int maxV, int minV)
   else return value;
 }
 
+// funcao com compensador de linearidade:
+// void readAnalogs()
+// {
+//   analogRead(0); // remove mystery first read noise
+//   byte i;
+
+//   filters[0][filterIndex] = analogRead(inputX1);
+//   unsigned int temp4 = 0;
+//   for(i = 0; i < nFilters; i++) temp4 += filters[0][i];
+//   AnalogsBruto.x1 = normalize(temp4 / nFilters, 0, 1023);
+
+//   // nao sei o que é:
+//   // AnalogsNonLinear.x1 = map(normalize(AnalogsBruto.x1, ajMin[0], ajMax[0]), ajMin[0], ajMax[0], 0, 1023);
+//   // Analogs.x1 = map(compensateNonLiniarity(0, AnalogsNonLinear.x1), 0, 1023, 0, 255);
+//   // esse é o certo (com compensador de linearidade):
+//   Analogs.x1 = map(normalize(compensateNonLiniarity(0, AnalogsBruto.x1), 0, 1023), 0, 1023, 0, 255);
+//   TX_Pack.x1 = map(Analogs.x1, 0, 255, saida[1][0], saida[0][0]);
+//   // sem compensador:
+
+
+//   filters[1][filterIndex] = analogRead(inputY1);
+//   temp4 = 0;
+//   for(i = 0; i < nFilters; i++) temp4 += filters[1][i];
+//   AnalogsBruto.y1 = normalize(temp4 / nFilters, 0, 1023);
+//   // nao sei o que é:
+//   // AnalogsNonLinear.y1 = map(normalize(AnalogsBruto.y1, ajMin[1], ajMax[1]), ajMin[1], ajMax[1], 0, 1023);
+//   // Analogs.y1 = map(compensateNonLiniarity(1, AnalogsNonLinear.y1), 0, 1023, 0, 255);
+//   // esse é o certo (com compensador de linearidade):
+//   Analogs.y1 = map(normalize(compensateNonLiniarity(1, AnalogsBruto.y1), 0, 1023), 0, 1023, 0, 255);
+//   TX_Pack.y1 = map(Analogs.y1, 0, 255, saida[1][1], saida[0][1]);
+//   // sem compensador:
+
+  
+//   filters[2][filterIndex] = analogRead(inputX2);
+//   temp4 = 0;
+//   for(i = 0; i < nFilters; i++) temp4 += filters[2][i];
+//   AnalogsBruto.x2 = normalize(temp4 / nFilters, 0, 1023);
+//   // nao sei o que é:
+//   // AnalogsNonLinear.x2 = map(normalize(AnalogsBruto.x2, ajMin[2], ajMax[2]), ajMin[2], ajMax[2], 0, 1023);
+//   // Analogs.x2 = map(compensateNonLiniarity(2, AnalogsNonLinear.x2), 0, 1023, 0, 255);
+//   // esse é o certo (com compensador de linearidade):
+//   Analogs.x2 = map(normalize(compensateNonLiniarity(2, AnalogsBruto.x2), 0, 1023), 0, 1023, 0, 255);
+//   TX_Pack.x2 = map(Analogs.x2, 0, 255, saida[1][2], saida[0][2]);
+//   // sem compensador:
+
+  
+//   filters[3][filterIndex] = analogRead(inputY2);
+//   temp4 = 0;
+//   for(i = 0; i < nFilters; i++) temp4 += filters[3][i];
+//   AnalogsBruto.y2 = normalize(temp4 / nFilters, 0, 1023);
+//   // nao sei o que é:
+//   // AnalogsNonLinear.y2 = map(normalize(AnalogsBruto.y2, ajMin[3], ajMax[3]), ajMin[3], ajMax[3], 0, 1023);
+//   // Analogs.y2 = map(compensateNonLiniarity(3, AnalogsNonLinear.y2), 0, 1023, 0, 255);
+//   // esse é o certo (com compensador de linearidade):
+//   Analogs.y2 = map(normalize(compensateNonLiniarity(3, AnalogsBruto.y2), 0, 1023), 0, 1023, 0, 255);
+//   TX_Pack.y2 = map(Analogs.y2, 0, 255, saida[1][3], saida[0][3]);
+
+
+
+//   //// Serial.print("|");
+
+//   //// Serial.print(AnalogsBruto.x1);
+//   //// Serial.print("-");
+//   //// // Serial.print(AnalogsNonLinear.x1);
+//   //// // Serial.print("-");
+//   //// Serial.print(Analogs.x1);
+//   //// Serial.print(" ");
+//   //// Serial.print(AnalogsBruto.y1);
+//   //// Serial.print("-");
+//   //// // Serial.print(AnalogsNonLinear.y1);
+//   //// // Serial.print("-");
+//   //// Serial.print(Analogs.y1);
+//   //// Serial.print(" ");
+//   //// Serial.print(AnalogsBruto.x2);
+//   //// Serial.print("-");
+//   //// // Serial.print(AnalogsNonLinear.x2);
+//   //// // Serial.print("-");
+//   //// Serial.print(Analogs.x2);
+//   //// Serial.print(" ");
+//   //// Serial.print(AnalogsBruto.y2);
+//   //// Serial.print("-");
+//   //// // Serial.print(AnalogsNonLinear.y2);
+//   //// // Serial.print("-");
+//   //// Serial.print(Analogs.y2);
+
+//   //// Serial.print("\n");
+
+//   filterIndex++;
+//   if(filterIndex >= nFilters) filterIndex = 0;
+// }
+
+// funcao sem compensador de linearidade:
 void readAnalogs()
 {
   analogRead(0); // remove mystery first read noise
@@ -666,67 +773,38 @@ void readAnalogs()
   filters[0][filterIndex] = analogRead(inputX1);
   unsigned int temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[0][i];
-  AnalogsBruto.x1 = normalize(temp4 / nFilters, 0, 1023);
-  // AnalogsNonLinear.x1 = map(normalize(AnalogsBruto.x1, ajMin[0], ajMax[0]), ajMin[0], ajMax[0], 0, 1023);
-  // Analogs.x1 = map(compensateNonLiniarity(0, AnalogsNonLinear.x1), 0, 1023, 0, 255);
-  Analogs.x1 = map(normalize(compensateNonLiniarity(0, AnalogsBruto.x1), 0, 1023), 0, 1023, 0, 255);
+  AnalogsBruto.x1 = temp4 / nFilters;
+  Analogs.x1 = map(normalize(AnalogsBruto.x1, ajMin[0], ajMax[0]), ajMin[0], ajMax[0], 0, 255);
   TX_Pack.x1 = map(Analogs.x1, 0, 255, saida[1][0], saida[0][0]);
 
   filters[1][filterIndex] = analogRead(inputY1);
   temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[1][i];
-  AnalogsBruto.y1 = normalize(temp4 / nFilters, 0, 1023);
-  // AnalogsNonLinear.y1 = map(normalize(AnalogsBruto.y1, ajMin[1], ajMax[1]), ajMin[1], ajMax[1], 0, 1023);
-  // Analogs.y1 = map(compensateNonLiniarity(1, AnalogsNonLinear.y1), 0, 1023, 0, 255);
-  Analogs.y1 = map(normalize(compensateNonLiniarity(1, AnalogsBruto.y1), 0, 1023), 0, 1023, 0, 255);
+  AnalogsBruto.y1 = temp4 / nFilters;
+  Analogs.y1 = map(normalize(AnalogsBruto.y1, ajMin[1], ajMax[1]), ajMin[1], ajMax[1], 0, 255);
   TX_Pack.y1 = map(Analogs.y1, 0, 255, saida[1][1], saida[0][1]);
-  
+
   filters[2][filterIndex] = analogRead(inputX2);
   temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[2][i];
-  AnalogsBruto.x2 = normalize(temp4 / nFilters, 0, 1023);
-  // AnalogsNonLinear.x2 = map(normalize(AnalogsBruto.x2, ajMin[2], ajMax[2]), ajMin[2], ajMax[2], 0, 1023);
-  // Analogs.x2 = map(compensateNonLiniarity(2, AnalogsNonLinear.x2), 0, 1023, 0, 255);
-  Analogs.x2 = map(normalize(compensateNonLiniarity(2, AnalogsBruto.x2), 0, 1023), 0, 1023, 0, 255);
+  AnalogsBruto.x2 = temp4 / nFilters; 
+  Analogs.x2 = map(normalize(AnalogsBruto.x2, ajMin[2], ajMax[2]), ajMin[2], ajMax[2], 0, 255);
   TX_Pack.x2 = map(Analogs.x2, 0, 255, saida[1][2], saida[0][2]);
-  
+
   filters[3][filterIndex] = analogRead(inputY2);
   temp4 = 0;
   for(i = 0; i < nFilters; i++) temp4 += filters[3][i];
-  AnalogsBruto.y2 = normalize(temp4 / nFilters, 0, 1023);
-  // AnalogsNonLinear.y2 = map(normalize(AnalogsBruto.y2, ajMin[3], ajMax[3]), ajMin[3], ajMax[3], 0, 1023);
-  // Analogs.y2 = map(compensateNonLiniarity(3, AnalogsNonLinear.y2), 0, 1023, 0, 255);
-  Analogs.y2 = map(normalize(compensateNonLiniarity(3, AnalogsBruto.y2), 0, 1023), 0, 1023, 0, 255);
+  AnalogsBruto.y2 = temp4 / nFilters;
+  Analogs.y2 = map(normalize(AnalogsBruto.y2, ajMin[3], ajMax[3]), ajMin[3], ajMax[3], 0, 255);
   TX_Pack.y2 = map(Analogs.y2, 0, 255, saida[1][3], saida[0][3]);
 
-
-  // Serial.print("|");
-
-  // Serial.print(AnalogsBruto.x1);
-  // Serial.print("-");
-  // // Serial.print(AnalogsNonLinear.x1);
-  // // Serial.print("-");
-  // Serial.print(Analogs.x1);
-  // Serial.print(" ");
-  // Serial.print(AnalogsBruto.y1);
-  // Serial.print("-");
-  // // Serial.print(AnalogsNonLinear.y1);
-  // // Serial.print("-");
-  // Serial.print(Analogs.y1);
-  // Serial.print(" ");
-  // Serial.print(AnalogsBruto.x2);
-  // Serial.print("-");
-  // // Serial.print(AnalogsNonLinear.x2);
-  // // Serial.print("-");
-  // Serial.print(Analogs.x2);
-  // Serial.print(" ");
-  // Serial.print(AnalogsBruto.y2);
-  // Serial.print("-");
-  // // Serial.print(AnalogsNonLinear.y2);
-  // // Serial.print("-");
-  // Serial.print(Analogs.y2);
-
-  // Serial.print("\n");
+//  Serial.print(AnalogsBruto.x1);
+//  Serial.print(" ");
+//  Serial.print(AnalogsBruto.y1);
+//  Serial.print(" ");
+//  Serial.print(AnalogsBruto.x2);
+//  Serial.print(" ");
+//  Serial.println(AnalogsBruto.y2);
 
   filterIndex++;
   if(filterIndex >= nFilters) filterIndex = 0;
@@ -739,7 +817,7 @@ void buttonPressed()
     byte menu = 0;
     byte item = 0;
     unsigned long lastButtonPressed = millis();
-    Serial.println("abrindo menu");
+    //Serial.println("abrindo menu");
     item = pag(menu, item);
     while(true)
     {
@@ -747,7 +825,7 @@ void buttonPressed()
       
       if(lastMenu==6) //se menu for 6
       {
-        Serial.println("Salvando");
+        //Serial.println("Salvando");
         byte valor1 = 0;
         byte valor2 = saida[MaxMin][eixoSelecionado];
         if(eixoSelecionado==0) valor1 = TX_Pack.x1;
@@ -755,11 +833,11 @@ void buttonPressed()
         else if(eixoSelecionado==2) valor1 = TX_Pack.x2;
         else if(eixoSelecionado==3) valor1 = TX_Pack.y2;
 
-        Serial.println("TX pack:");
-        Serial.println("x1 " + (String)TX_Pack.x1);
-        Serial.println("y1 " + (String)TX_Pack.y1);
-        Serial.println("x2 " + (String)TX_Pack.x2);
-        Serial.println("y2 " + (String)TX_Pack.y2);
+        //Serial.println("TX pack:");
+        //Serial.println("x1 " + (String)TX_Pack.x1);
+        //Serial.println("y1 " + (String)TX_Pack.y1);
+        //Serial.println("x2 " + (String)TX_Pack.x2);
+        //Serial.println("y2 " + (String)TX_Pack.y2);
         
         while(true)
         {
@@ -874,14 +952,14 @@ void buttonPressed()
         
         if(lastMenu==4||lastMenu==5) //se menu for 4 ou 5
         {
-          Serial.println("m: "+(String)menu+" lm: "+(String)lastMenu);
+          //Serial.println("m: "+(String)menu+" lm: "+(String)lastMenu);
           sendPack();
         }
         
         if(botoes!=0) if(millis()>lastButtonPressed+50)
         {
           byte f1 = 0;
-          Serial.println("botao pressionado");
+          //Serial.println("botao pressionado");
           if(bitRead(botoes, botUp)==1)
           {
             item--;
@@ -949,7 +1027,7 @@ void buttonPressed()
           }
           lastButtonPressed = millis();
         }
-        else Serial.print("@");
+        //else Serial.print("@");
       }
     }
 }
@@ -991,27 +1069,27 @@ int inputPoints[numbOfMappingInputs][numbOfMappingPoints] = {
 
 // int asd[] = {0,1,2};
 
-unsigned int compensateNonLiniarity(byte p, unsigned int val)
-{
-  for(byte pointIdx = 0; pointIdx < numbOfMappingPoints; pointIdx++)
-  {    
-    int lowerVal;
-    int higherVal;
+// unsigned int compensateNonLiniarity(byte p, unsigned int val)
+// {
+//   for(byte pointIdx = 0; pointIdx < numbOfMappingPoints; pointIdx++)
+//   {    
+//     int lowerVal;
+//     int higherVal;
 
-    if(inputPoints[p][pointIdx] < inputPoints[p][pointIdx+1])
-    {
-      lowerVal = inputPoints[p][pointIdx];
-      higherVal = inputPoints[p][pointIdx+1];
-    }
-    else
-    {
-      lowerVal = inputPoints[p][pointIdx+1];
-      higherVal = inputPoints[p][pointIdx];
-    }
+//     if(inputPoints[p][pointIdx] < inputPoints[p][pointIdx+1])
+//     {
+//       lowerVal = inputPoints[p][pointIdx];
+//       higherVal = inputPoints[p][pointIdx+1];
+//     }
+//     else
+//     {
+//       lowerVal = inputPoints[p][pointIdx+1];
+//       higherVal = inputPoints[p][pointIdx];
+//     }
 
-    if(val >= lowerVal && val <= higherVal)
-    {
-      return map(val, inputPoints[p][pointIdx], inputPoints[p][pointIdx+1], stepSize*pointIdx, stepSize*(pointIdx+1));
-    }
-  }
-}
+//     if(val >= lowerVal && val <= higherVal)
+//     {
+//       return map(val, inputPoints[p][pointIdx], inputPoints[p][pointIdx+1], stepSize*pointIdx, stepSize*(pointIdx+1));
+//     }
+//   }
+// }
