@@ -168,6 +168,13 @@ typedef struct
 {
   unsigned int ajMin[4] = {0, 0, 0, 0};
   unsigned int ajMax[4] = {1023, 1023, 1023, 1023};
+  unsigned int mid[4][2] = {
+    {450, 574},
+    {450, 574},
+    {450, 574},
+    {450, 574}
+  };
+  byte midEnabled = B1101;
   byte saida[2][4] = {
     {255, 255, 255, 255}, // max //@
     {0, 0, 0, 0}          // min
@@ -175,17 +182,6 @@ typedef struct
 }
 eepromStuff;
 eepromStuff e;
-// typedef struct
-// {
-//   unsigned int ajMin[4] = {2, 878, 819, 18};
-//   unsigned int ajMax[4] = {968, 19, 0, 846};
-//   byte saida[2][4] ={
-//     {255, 255, 255, 255}, // max //@
-//     {0, 0, 0, 0}          // min
-//   };
-// }
-// eepromStuff;
-// eepromStuff e;
 
 void saveToEEPROM()
 {
@@ -454,18 +450,6 @@ void loop()
   //Serial.print(" ");
   //Serial.println(RX_Pack.batteryVoltage);*/
 
-  // prints tx_pack values
-  Serial.print(TX_Pack.x1);
-  Serial.print(" ");
-  Serial.print(TX_Pack.y1);
-  Serial.print(" ");
-  Serial.print(TX_Pack.x2);
-  Serial.print(" ");
-  Serial.print(TX_Pack.y2);
-  Serial.println(" 255 0");
-
-
-  
   // // prints analog bruto values
   // Serial.print(AnalogsBruto.x1);
   // Serial.print(" ");
@@ -475,6 +459,29 @@ void loop()
   // Serial.print(" ");
   // Serial.print(AnalogsBruto.y2);
   // Serial.println(" 1023 0");
+
+  // // prints analog values
+  // Serial.print(Analogs.x1);
+  // Serial.print(" ");
+  // Serial.print(Analogs.y1);
+  // Serial.print(" ");
+  // Serial.print(Analogs.x2);
+  // Serial.print(" ");
+  // Serial.print(Analogs.y2);
+  // Serial.println(" 65535 0");
+  
+  // // prints tx_pack values
+  // Serial.print(TX_Pack.x1);
+  // Serial.print(" ");
+  // Serial.print(TX_Pack.y1);
+  // Serial.print(" ");
+  // Serial.print(TX_Pack.x2);
+  // Serial.print(" ");
+  // Serial.print(TX_Pack.y2);
+  // Serial.println(" 255 0");
+
+
+  
 
   
   LM = micros();
@@ -710,6 +717,8 @@ void readAnalogs()
   computeFilter(&AnalogsBruto.x2, &Analogs.x2, &TX_Pack.x2, inputX2, 2);
   computeFilter(&AnalogsBruto.y2, &Analogs.y2, &TX_Pack.y2, inputY2, 3);
 
+  Serial.println(" |");
+
 //  Serial.print(AnalogsBruto.x1);
 //  Serial.print(" ");
 //  Serial.print(AnalogsBruto.y1);
@@ -735,12 +744,12 @@ void computeFilter(unsigned int *brutoPointer, unsigned int *analogPointer, byte
   if(deviation < 0) deviation = -deviation;
   analogsBrutoSum[axisNum] += deviation;
   
-  if(deviation > maxDeviationToEndHolding || analogsBrutoNotHolding[axisNum])
+  if(deviation > maxDeviationToEndHolding || analogsBrutoNotHolding[axisNum] || true)
   {
     analogsBrutoNotHolding[axisNum] = true;
-    *brutoPointer = sumValues;
-    *analogPointer = map(normalize(*brutoPointer, e.ajMin[axisNum], e.ajMax[axisNum]), e.ajMin[axisNum], e.ajMax[axisNum], 0, 66535);
-    *txpackPointer = map(*analogPointer, 0, 66535, e.saida[1][axisNum], e.saida[0][axisNum]);
+    *brutoPointer = sumValues;    
+    *analogPointer = calcAnalogValue(brutoPointer, &axisNum);
+    *txpackPointer = map(*analogPointer, 0, 65535, e.saida[1][axisNum], e.saida[0][axisNum]);
   }
   
   // if(axisNum == 1)
@@ -749,6 +758,33 @@ void computeFilter(unsigned int *brutoPointer, unsigned int *analogPointer, byte
   //   Serial.print(" ");
   //   Serial.println(*brutoPointer);
   // }
+}
+
+unsigned int calcAnalogValue(unsigned int *brutoPointer, byte *axisNumPoiner)
+{
+  unsigned int normalized = normalize(*brutoPointer, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner]);
+  unsigned int final;
+
+  if(*axisNumPoiner <= 1)
+  {
+    Serial.print(" | ");
+
+    Serial.print(*axisNumPoiner);
+    Serial.print(") ");
+    Serial.print(bitRead(e.midEnabled, *axisNumPoiner)?"E":"D");
+    Serial.print(" ");
+    Serial.print(e.mid[*axisNumPoiner][0]);
+    Serial.print("~");
+    Serial.print(e.mid[*axisNumPoiner][1]);
+
+    Serial.print(" ");
+    Serial.print(normalized);
+    Serial.print("→");
+    Serial.print(final);
+  }
+
+  return map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, 65535);
+
 }
 
 void p(String s, byte c)
