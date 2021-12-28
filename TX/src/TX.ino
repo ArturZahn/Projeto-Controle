@@ -5,7 +5,7 @@
 /*@u8g@*/ #include "U8glib.h"
 
 #define COUNT 10 // number for statistics
-#define nFilterSignal 10
+#define nFilterSignal 100
 byte iSignal = 0;
 unsigned int signalSum = 0;
 
@@ -44,6 +44,19 @@ unsigned long lastVoltageInterval = 0;
 double internalBattery = 0.00;
 double lastInternalBattery = 0.00;
 
+/*---------------------------- Logs and options ----------------------------*/
+//tags: logoptions log options
+
+#define logAnalogsRaw false
+#define logAnalogs false
+#define logAnalogsMappedToByte false
+#define logOutput false
+#define logLimitAdnMiddleAdjust false
+
+#define logInternalBatteryVoltage false
+
+/*--------------------------------------------------------------*/
+
 const uint64_t pipes[2] = {0xF0F0F0F0E1LL, 0xF0F0F0F0D2LL};
 RF24 radio(9, 10);
 
@@ -70,17 +83,19 @@ typedef struct
 }
 uint_joysticks;
 
-uint_joysticks AnalogsBruto;
+uint_joysticks AnalogsRaw;
 uint_joysticks Analogs;
+#define AnalogsMaxValue 65535
+#define AnalogsMiddleValue 32896
 
-// byte analogsBrutoNotHolding = B0000;
-bool analogsBrutoNotHolding[4] = {false, false, false, false};
+// byte analogsRawNotHolding = B0000;
+bool analogsRawNotHolding[4] = {false, false, false, false};
 #define histSumTime 100
 #define maxDeviationToEndHolding 1 // maximum difference between the held position and the actual position to stop holding the position
 #define maxVariationtionToStartHolding 6 // 
 unsigned int histSumCount = 0;
-unsigned int analogsBrutoSum[4] = {0, 0, 0, 0};
-unsigned long analogsBrutoLastSum = 0;
+unsigned int analogsRawSum[4] = {0, 0, 0, 0};
+unsigned long analogsRawLastSum = 0;
 
 typedef struct
 {
@@ -123,7 +138,7 @@ byte MaxMin = 0;
 
 bool refreshPoint = true;
 
-unsigned int i = 0; // variavel contadora para timer2
+unsigned int it2 = 0; // variavel contadora para timer2
 
 int temp5 = 0; // leitura temporario para ajuste dos potenciometros
 
@@ -168,11 +183,19 @@ typedef struct
 {
   unsigned int ajMin[4] = {0, 0, 0, 0};
   unsigned int ajMax[4] = {1023, 1023, 1023, 1023};
+  // unsigned int ajMin[4] = {2, 878, 819, 18};
+  // unsigned int ajMax[4] = {968, 21, 0, 846};
+  // unsigned int mid[4][2];
   unsigned int mid[4][2] = {
-    {450, 574},
-    {450, 574},
-    {450, 574},
-    {450, 574}
+    {512, 512},
+    {512, 512},
+    {512, 512},
+    {512, 512}
+
+    // {444, 513}, //normal
+    // {512, 512}, //invertido (nao calibrado)
+    // {466, 374}, //invertido
+    // {397, 427}  //normal
   };
   byte midEnabled = B1101;
   byte saida[2][4] = {
@@ -185,23 +208,34 @@ eepromStuff e;
 
 void saveToEEPROM()
 {
+  ensureMiddleAdjustIsRight();
   EEPROM.put(0, e);
 }
 
 void loadFromEEPROM()
 {
   EEPROM.get(0, e);
+  if(ensureMiddleAdjustIsRight()) EEPROM.put(0, e);
+  // EEPROM.put(0, e);
 }
 
-// unsigned int ajMin[4] = {0, 0, 0, 0};
-// unsigned int ajMax[4] = {1023, 1023, 1023, 1023};
-// unsigned int ajMid[4] = {512, 512, 512, 512};
-// byte ajMidEnabled = B0000;
+bool ensureMiddleAdjustIsRight()
+{
+  bool anythingChanged = false;
+  for(byte i = 0; i < 4; i++)
+  {
+    if((e.ajMin[i] > e.ajMax[i]) != (e.mid[i][0] > e.mid[i][1])) // if the ajMin/ajMax is in crescent/decrescent order and the mid adjust is different
+    {
+      // so change mid adjust order to make it order equals ajMin/ajMax order
+      unsigned int tempVal = e.mid[i][0];
+      e.mid[i][0] = e.mid[i][1];
+      e.mid[i][1] = tempVal;
+      anythingChanged = true;
+    }
+  }
 
-// byte saida[2][4] = {
-//   {255, 255, 255, 255}, // max //@
-//   {0, 0, 0, 0}          // min
-// };
+  return anythingChanged;
+}
 
 void readBattery()
 {
@@ -275,49 +309,50 @@ void sendPack() {
     if (_fail + _success >= COUNT)
     {
       iSignal++;
-      // #define nFilterSignal 100
-      // byte iSignal = 0;
-      // unsigned int signalSum = 0;
 
       //@sinal
       byte preRatio = (10*_success)/COUNT;
       signalSum += preRatio;
       if(preRatio<1)ff1 = 0;
+
       _success = 0;
       _fail = 0;
       
-      if(iSignal >= 100)
+      if(iSignal >= nFilterSignal)
       {
-        ratio = signalSum/nFilterSignal;
+        ratio = signalSum*10/nFilterSignal;
         iSignal = 0;
         signalSum = 0;
-
-        //Serial.print(signalSum);
-        //Serial.print(" ");
-        //Serial.println(ratio);
       }
     }
 }
 
 ISR(TIMER2_OVF_vect) {
-  i++;
-  if(i>100)
+  it2++;
+  if(it2>100)
   {
-    i = 0;
-    if(menuPrincipal) if(lastVoltage != RX_Pack.batteryVoltage || lastRatio != ratio || lastInternalBattery != internalBattery)
+    it2 = 0;
+    if(menuPrincipal)
     {
       refreshMenuPrincipal();
-      ////Serial.println("refresh yep");
-    }/*
-    else
-    {
-      //Serial.println("refresh no");
-    }*/
+    }
   }
 }
 
 void refreshMenuPrincipal()
 {
+  refreshMenuPrincipal(false);
+}
+void refreshMenuPrincipal(bool forceUpdate)
+{
+  // if there isn't new values and it dont want to force the update, do not update screen
+  if((lastVoltage == RX_Pack.batteryVoltage) && (lastRatio == ratio) && (lastInternalBattery == internalBattery) && !forceUpdate) 
+  {
+    Serial.println("nop");
+    return;
+  }
+  Serial.println("update");
+
   /*@u8g@*/ u8g.setDefaultForegroundColor();
   /*@u8g@*/ u8g.firstPage();  
   /*@u8g@*/ do {
@@ -327,11 +362,6 @@ void refreshMenuPrincipal()
   /*@u8g@*/   u8g.drawFrame(2, 17, 3, 3); u8g.drawFrame(0, 19, 7, 12); // internal battery icon 
   /*@u8g@*/   u8g.setPrintPos(11, 30); u8g.print(String(internalBattery) + "v"); // internal battery voltage
   /*@u8g@*/   
-  /*@u8g@*/   // u8g.drawLine(105, 12, 105, 12);
-  /*@u8g@*/   // u8g.drawLine(104, 9, 106, 9); u8g.drawLine(103, 10, 103, 10); u8g.drawLine(107, 10, 107, 10);
-  /*@u8g@*/   // u8g.drawLine(101, 8, 102, 7); u8g.drawLine(109, 8, 108, 7);   u8g.drawLine(103, 6, 107, 6); 
-  /*@u8g@*/   // u8g.drawLine(99, 6, 100, 5); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(101, 4, 102, 4); u8g.drawLine(108, 4, 109, 4);   u8g.drawLine(103, 3, 107, 3); // signal icon //u8g.drawLine(99, 6, 101, 4); u8g.drawLine(109, 4, 111, 6);   u8g.drawLine(102, 3, 108, 3); // signal icon
-  /*@u8g@*/   // u8g.setPrintPos(113, 13); u8g.print(ratio); // signal indicator
   /*@u8g@*/   u8g.drawLine(97, 12, 97, 12);
   /*@u8g@*/   u8g.drawLine(96, 9, 98, 9); u8g.drawLine(95, 10, 95, 10); u8g.drawLine(99, 10, 99, 10);
   /*@u8g@*/   u8g.drawLine(93, 8, 94, 7); u8g.drawLine(101, 8, 100, 7);   u8g.drawLine(95, 6, 99, 6); 
@@ -356,6 +386,9 @@ unsigned long lastTempoMenu3 = 0;
 
 void setup()
 {
+
+  Serial.begin(115200);
+
   /*@u8g@*/ u8g.setColorIndex(255);
   /*@u8g@*/ u8g.setFont(u8g_font_unifont);
 
@@ -366,7 +399,6 @@ void setup()
   /*@u8g@*/ } while(u8g.nextPage());
   
   
-  Serial.begin(115200);
   analogReference(EXTERNAL);
   
   for(byte i = 0; i < nFilters; i++)
@@ -450,36 +482,58 @@ void loop()
   //Serial.print(" ");
   //Serial.println(RX_Pack.batteryVoltage);*/
 
-  // // prints analog bruto values
-  // Serial.print(AnalogsBruto.x1);
-  // Serial.print(" ");
-  // Serial.print(AnalogsBruto.y1);
-  // Serial.print(" ");
-  // Serial.print(AnalogsBruto.x2);
-  // Serial.print(" ");
-  // Serial.print(AnalogsBruto.y2);
-  // Serial.println(" 1023 0");
+  #if logAnalogsRaw
+  // prints analog raw values
+  Serial.print(AnalogsRaw.x1);
+  Serial.print(" ");
+  Serial.print(AnalogsRaw.y1);
+  Serial.print(" ");
+  Serial.print(AnalogsRaw.x2);
+  Serial.print(" ");
+  Serial.print(AnalogsRaw.y2);
+  Serial.println(" 1023 0");
+  #endif
 
-  // // prints analog values
-  // Serial.print(Analogs.x1);
-  // Serial.print(" ");
-  // Serial.print(Analogs.y1);
-  // Serial.print(" ");
-  // Serial.print(Analogs.x2);
-  // Serial.print(" ");
-  // Serial.print(Analogs.y2);
-  // Serial.println(" 65535 0");
+  #if logAnalogs
+  // prints analog values
+  Serial.print(Analogs.x1);
+  Serial.print(" ");
+  Serial.print(Analogs.y1);
+  Serial.print(" ");
+  Serial.print(Analogs.x2);
+  Serial.print(" ");
+  Serial.print(Analogs.y2);
+  Serial.println(" "+(String)AnalogsMaxValue+" 0");
+  #endif
+
+  #if logAnalogsMappedToByte
+  // prints analog values
+  Serial.print(mapAnalogToByte(Analogs.x1));
+  Serial.print(" ");
+  Serial.print(mapAnalogToByte(Analogs.y1));
+  Serial.print(" ");
+  Serial.print(mapAnalogToByte(Analogs.x2));
+  Serial.print(" ");
+  Serial.print(mapAnalogToByte(Analogs.y2));
+  Serial.println(" 255 0");
+  #endif
   
-  // // prints tx_pack values
-  // Serial.print(TX_Pack.x1);
-  // Serial.print(" ");
-  // Serial.print(TX_Pack.y1);
-  // Serial.print(" ");
-  // Serial.print(TX_Pack.x2);
-  // Serial.print(" ");
-  // Serial.print(TX_Pack.y2);
-  // Serial.println(" 255 0");
+  #if logOutput
+  // prints tx_pack values
+  Serial.print(TX_Pack.x1);
+  Serial.print(" ");
+  Serial.print(TX_Pack.y1);
+  Serial.print(" ");
+  Serial.print(TX_Pack.x2);
+  Serial.print(" ");
+  Serial.print(TX_Pack.y2);
+  Serial.println(" 255 0");
+  #endif
 
+
+  #if logInternalBatteryVoltage
+  Serial.println(internalBattery);
+  #endif
 
   
 
@@ -542,27 +596,30 @@ byte pag(byte menu, byte item)
       jIni = 0;
     }
 
-    byte temp3 = 0;
+    unsigned int temp3 = 0;
     if(menu==3)
     {
-      readAnalogs();
+      for(int i = 0; i < nFilters; i++)
+      {
+        readAnalogs();
+      }
       switch(eixoSelecionado)
       {
         case 1:
           temp3 = Analogs.x1;
-          temp5 = AnalogsBruto.x1;
+          temp5 = AnalogsRaw.x1;
           break;
         case 2:
           temp3 = Analogs.y1;
-          temp5 = AnalogsBruto.y1;
+          temp5 = AnalogsRaw.y1;
           break;
         case 3:
           temp3 = Analogs.x2;
-          temp5 = AnalogsBruto.x2;
+          temp5 = AnalogsRaw.x2;
           break;
         case 4:
           temp3 = Analogs.y2;
-          temp5 = AnalogsBruto.y2;
+          temp5 = AnalogsRaw.y2;
           break;
         default:
           temp3 = 0;
@@ -607,11 +664,12 @@ byte pag(byte menu, byte item)
 
     /*@u8g@*/   if(menu==3) drawValue1(temp3);
       
-    /*@u8g@*/   /*u8g.drawLine(105, 12, 105, 12);
-    /*@u8g@*/   u8g.drawLine(104, 9, 106, 9); u8g.drawLine(103, 10, 103, 10); u8g.drawLine(107, 10, 107, 10);
-    /*@u8g@*/   u8g.drawLine(101, 8, 102, 7); u8g.drawLine(109, 8, 108, 7);   u8g.drawLine(103, 6, 107, 6); 
-    /*@u8g@*/   u8g.drawLine(99, 6, 100, 5); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(101, 4, 102, 4); u8g.drawLine(108, 4, 109, 4);   u8g.drawLine(103, 3, 107, 3); // signal icon //u8g.drawLine(99, 6, 101, 4); u8g.drawLine(109, 4, 111, 6);   u8g.drawLine(102, 3, 108, 3); // signal icon
-    /*@u8g@*/   u8g.setPrintPos(113, 13); u8g.print(ratio); // signal indicator*/
+    // sinal fora do lugar (na pagina errada)
+    // /*@u8g@*/   /*u8g.drawLine(105, 12, 105, 12);
+    // /*@u8g@*/   u8g.drawLine(104, 9, 106, 9); u8g.drawLine(103, 10, 103, 10); u8g.drawLine(107, 10, 107, 10);
+    // /*@u8g@*/   u8g.drawLine(101, 8, 102, 7); u8g.drawLine(109, 8, 108, 7);   u8g.drawLine(103, 6, 107, 6); 
+    // /*@u8g@*/   u8g.drawLine(99, 6, 100, 5); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(110, 5, 111, 6); u8g.drawLine(101, 4, 102, 4); u8g.drawLine(108, 4, 109, 4);   u8g.drawLine(103, 3, 107, 3); // signal icon //u8g.drawLine(99, 6, 101, 4); u8g.drawLine(109, 4, 111, 6);   u8g.drawLine(102, 3, 108, 3); // signal icon
+    // /*@u8g@*/   u8g.setPrintPos(113, 13); u8g.print(ratio); // signal indicator*/
       
     /*@u8g@*/ ////Serial.print("A2");
     /*@u8g@*/ } while(u8g.nextPage());
@@ -637,22 +695,22 @@ void refreshMenuEntradas()
   /*@u8g@*/ u8g.firstPage();  
   /*@u8g@*/ do
   /*@u8g@*/ {
-  /*@u8g@*/   byte temp1 = map(Analogs.y1, 0, 255, 0, 42);
+  /*@u8g@*/   byte temp1 = map(Analogs.y1, 0, AnalogsMaxValue, 0, 42);
   /*@u8g@*/   u8g.drawFrame(7, 1, 6, 44);
   /*@u8g@*/   if(temp1!=0) u8g.drawBox(8, 44-temp1, 4, temp1);
   /*@u8g@*/ 
-  /*@u8g@*/   byte temp2 = map(Analogs.x1, 0, 255, 0, 42);
+  /*@u8g@*/   byte temp2 = map(Analogs.x1, 0, AnalogsMaxValue, 0, 42);
   /*@u8g@*/   u8g.drawFrame(13, 45, 44, 6);
   /*@u8g@*/   u8g.drawBox(14, 46, temp2, 4);
   /*@u8g@*/ 
   /*@u8g@*/   u8g.drawBox(13+(temp2==42?41:temp2), 42-(temp1==42?41:temp1), 3, 3);
   /*@u8g@*/   
   /*@u8g@*/ 
-  /*@u8g@*/   temp1 = map(Analogs.x2, 0, 255, 0, 42);
+  /*@u8g@*/   temp1 = map(Analogs.x2, 0, AnalogsMaxValue, 0, 42);
   /*@u8g@*/   u8g.drawFrame(69, 45, 44, 6);
   /*@u8g@*/   u8g.drawBox(70+temp1, 46, 42-temp1, 4);
   /*@u8g@*/ 
-  /*@u8g@*/   temp2 = map(Analogs.y2, 0, 255, 0, 42);
+  /*@u8g@*/   temp2 = map(Analogs.y2, 0, AnalogsMaxValue, 0, 42);
   /*@u8g@*/   u8g.drawFrame(113, 1, 6, 44);
   /*@u8g@*/   if(temp2!=0) u8g.drawBox(114, 44-temp2, 4, temp2);
   /*@u8g@*/   
@@ -660,13 +718,13 @@ void refreshMenuEntradas()
   /*@u8g@*/ 
   /*@u8g@*/   
   /*@u8g@*/   u8g.setPrintPos(6, 64);
-  /*@u8g@*/   u8g.print(Analogs.y1);
+  /*@u8g@*/   u8g.print(mapAnalogToByte(Analogs.y1));
   /*@u8g@*/   u8g.setPrintPos(34, 64);
-  /*@u8g@*/   u8g.print(Analogs.x1);
+  /*@u8g@*/   u8g.print(mapAnalogToByte(Analogs.x1));
   /*@u8g@*/   u8g.setPrintPos(68, 64);
-  /*@u8g@*/   u8g.print(Analogs.x2);
+  /*@u8g@*/   u8g.print(mapAnalogToByte(Analogs.x2));
   /*@u8g@*/   u8g.setPrintPos(96, 64);
-  /*@u8g@*/   u8g.print(Analogs.y2);
+  /*@u8g@*/   u8g.print(mapAnalogToByte(Analogs.y2));
   /*@u8g@*/   
   /*@u8g@*/ } while(u8g.nextPage());
 }
@@ -693,125 +751,138 @@ void readAnalogs()
   unsigned int now = millis();
 
   histSumCount++;
-  if(now - analogsBrutoLastSum > histSumTime)
+  if(now - analogsRawLastSum > histSumTime)
   {
-    analogsBrutoLastSum = now;
+    analogsRawLastSum = now;
 
     histSumCount--; // reduces 1 because the last sum was not executed
 
-    for(i = 0; i < 4; i++)
+    for(byte i = 0; i < 4; i++)
     {
-      if(analogsBrutoSum[i]*100/histSumCount <= maxVariationtionToStartHolding)
+      if(analogsRawSum[i]*100/histSumCount <= maxVariationtionToStartHolding)
       {
-        analogsBrutoNotHolding[i] = false;
+        analogsRawNotHolding[i] = false;
       }
 
-      analogsBrutoSum[i] = 0;
+      analogsRawSum[i] = 0;
     }
 
     histSumCount = 0;
   }
 
-  computeFilter(&AnalogsBruto.x1, &Analogs.x1, &TX_Pack.x1, inputX1, 0);
-  computeFilter(&AnalogsBruto.y1, &Analogs.y1, &TX_Pack.y1, inputY1, 1);
-  computeFilter(&AnalogsBruto.x2, &Analogs.x2, &TX_Pack.x2, inputX2, 2);
-  computeFilter(&AnalogsBruto.y2, &Analogs.y2, &TX_Pack.y2, inputY2, 3);
+  computeFilter(&AnalogsRaw.x1, &Analogs.x1, &TX_Pack.x1, inputX1, 0);
+  computeFilter(&AnalogsRaw.y1, &Analogs.y1, &TX_Pack.y1, inputY1, 1);
+  computeFilter(&AnalogsRaw.x2, &Analogs.x2, &TX_Pack.x2, inputX2, 2);
+  computeFilter(&AnalogsRaw.y2, &Analogs.y2, &TX_Pack.y2, inputY2, 3);
 
+  #if logLimitAdnMiddleAdjust
   Serial.println(" |");
+  #endif
 
-//  Serial.print(AnalogsBruto.x1);
+//  Serial.print(AnalogsRaw.x1);
 //  Serial.print(" ");
-//  Serial.print(AnalogsBruto.y1);
+//  Serial.print(AnalogsRaw.y1);
 //  Serial.print(" ");
-//  Serial.print(AnalogsBruto.x2);
+//  Serial.print(AnalogsRaw.x2);
 //  Serial.print(" ");
-//  Serial.print(AnalogsBruto.y2);
+//  Serial.print(AnalogsRaw.y2);
 //  Serial.println(" 1023 0");
 
   filterIndex++;
   if(filterIndex >= nFilters) filterIndex = 0;
 }
 
-void computeFilter(unsigned int *brutoPointer, unsigned int *analogPointer, byte *txpackPointer, byte readingPin, byte axisNum)
+void computeFilter(unsigned int *rawPointer, unsigned int *analogPointer, byte *txpackPointer, byte readingPin, byte axisNum)
 {
   
   filters[axisNum][filterIndex] = analogRead(readingPin);
   unsigned int sumValues = 0;
-  for(i = 0; i < nFilters; i++) sumValues += filters[axisNum][i];
+  for(byte i = 0; i < nFilters; i++) sumValues += filters[axisNum][i];
   sumValues /= nFilters;
 
-  int deviation = sumValues - *brutoPointer;
+  int deviation = sumValues - *rawPointer;
   if(deviation < 0) deviation = -deviation;
-  analogsBrutoSum[axisNum] += deviation;
+  analogsRawSum[axisNum] += deviation;
   
-  if(deviation > maxDeviationToEndHolding || analogsBrutoNotHolding[axisNum] || true)
+  if(deviation > maxDeviationToEndHolding || analogsRawNotHolding[axisNum])
   {
-    analogsBrutoNotHolding[axisNum] = true;
-    *brutoPointer = sumValues;    
-    *analogPointer = calcAnalogValue(brutoPointer, &axisNum);
-    *txpackPointer = map(*analogPointer, 0, 65535, e.saida[1][axisNum], e.saida[0][axisNum]);
+    analogsRawNotHolding[axisNum] = true;
+    *rawPointer = sumValues;    
+    *analogPointer = calcAnalogValue(rawPointer, &axisNum);
+    *txpackPointer = map(*analogPointer, 0, AnalogsMaxValue, e.saida[1][axisNum], e.saida[0][axisNum]);
   }
-  
-  // if(axisNum == 1)
-  // {
-  //   Serial.print(sumValues);
-  //   Serial.print(" ");
-  //   Serial.println(*brutoPointer);
-  // }
 }
 
-unsigned int calcAnalogValue(unsigned int *brutoPointer, byte *axisNumPoiner)
+// #define inBetween(number, value1, value2) ((number <= value1 && number >= value2)||((number >= value1 && number <= value2)))?true:false
+#define inBetween(number, value1, value2) (number <= value1 && number >= value2)?(true):(number >= value1 && number <= value2)
+// #define inBetweenCres(number, value1, value2) (number <= value1 && number >= value2)
+
+unsigned int calcAnalogValue(unsigned int *rawPointer, byte *axisNumPoiner)
 {
-  unsigned int normalized = normalize(*brutoPointer, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner]);
-  unsigned int final;
+  unsigned int normalized = normalize(*rawPointer, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner]);
 
-  if(*axisNumPoiner <= 1)
+  #if logLimitAdnMiddleAdjust
+
+  Serial.print(" | ");
+
+  Serial.print(*axisNumPoiner);
+  Serial.print(") ");
+  Serial.print(bitRead(e.midEnabled, *axisNumPoiner)?"E":"D");
+  Serial.print(" ");
+
+  Serial.print(e.ajMin[*axisNumPoiner]);
+  Serial.print("-");
+  Serial.print(e.mid[*axisNumPoiner][0]);
+  Serial.print("~");
+  Serial.print(e.mid[*axisNumPoiner][1]);
+  Serial.print("-");
+  Serial.print(e.ajMax[*axisNumPoiner]);
+
+  Serial.print(" ");
+  Serial.print(*rawPointer);
+  Serial.print("→");
+  #endif
+
+  if(bitRead(e.midEnabled, *axisNumPoiner)) // if the middle position is enabled
   {
-    Serial.print(" | ");
-
-    Serial.print(*axisNumPoiner);
-    Serial.print(") ");
-    Serial.print(bitRead(e.midEnabled, *axisNumPoiner)?"E":"D");
-    Serial.print(" ");
-    Serial.print(e.mid[*axisNumPoiner][0]);
-    Serial.print("~");
-    Serial.print(e.mid[*axisNumPoiner][1]);
-
-    Serial.print(" ");
-    Serial.print(normalized);
-    Serial.print("→");
-    Serial.print(final);
-  }
-
-  return map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, 65535);
-
-}
-
-void p(String s, byte c)
-{
-  unsigned int rep = c - s.length();
-  if(rep < 0)
-  {
-    for(int i=0; i <= c ; i++)
+    if(inBetween(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0]))
     {
-      Serial.print("X");
+      #if logLimitAdnMiddleAdjust
+      Serial.print(map(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0], 0, AnalogsMiddleValue));
+      Serial.print(" ←");
+      #endif
+
+      return map(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0], 0, AnalogsMiddleValue);
+    }
+    else if(inBetween(normalized, e.ajMax[*axisNumPoiner], e.mid[*axisNumPoiner][1]))
+    {
+      #if logLimitAdnMiddleAdjust
+      Serial.print(map(normalized, e.mid[*axisNumPoiner][1], e.ajMax[*axisNumPoiner], AnalogsMiddleValue, AnalogsMaxValue));
+      Serial.print(" →");
+      #endif
+
+      return map(normalized, e.mid[*axisNumPoiner][1], e.ajMax[*axisNumPoiner], AnalogsMiddleValue, AnalogsMaxValue);
+    }
+    else
+    {
+      #if logLimitAdnMiddleAdjust
+      Serial.print(AnalogsMiddleValue);
+      Serial.print(" °");
+      #endif
+
+      return AnalogsMiddleValue;
     }
   }
-  else if(rep > 0)
+  else
   {
-    rep -= 1;
-    for(int i=0; i <= rep ; i++)
-    {
-      Serial.print(" ");
-    }
-  }
-  
-  Serial.print(s);
-}
+    #if logLimitAdnMiddleAdjust
+    Serial.print(map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, AnalogsMaxValue));
+    Serial.print(" X");
+    #endif
 
-void p(int n, byte c) {p((String)n, c);}
-void p(unsigned int n, byte c) {p((String)n, c);}
-void p(byte n, byte c) {p((String)n, c);}
+    return map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, AnalogsMaxValue);
+  }
+}
 
 void buttonPressed()
 {
@@ -952,7 +1023,12 @@ void buttonPressed()
           if(lastMenu==1) refreshMenuEntradas();
           else if(lastMenu==3) pag(3, lastItem);
         }
-        readAnalogs();
+        
+        for(int i = 0; i < nFilters; i++)
+        {
+          readAnalogs();
+        }
+
         readButtons();
         
         if(lastMenu==4||lastMenu==5) //se menu for 4 ou 5
@@ -1037,14 +1113,14 @@ void buttonPressed()
     }
 }
 
-void drawValue1(byte valor)
+void drawValue1(unsigned int valor)
 {
   /*@u8g@*/ u8g.setDefaultForegroundColor();
   /*@u8g@*/ u8g.drawFrame(27, 47, 96, 10);
-  /*@u8g@*/ u8g.drawBox(28, 48, map(valor, 0, 255, 0, 94), 8);
+  /*@u8g@*/ u8g.drawBox(28, 48, map(valor, 0, AnalogsMaxValue, 0, 94), 8);
   
   /*@u8g@*/ u8g.setPrintPos(1, 56);
-  /*@u8g@*/ u8g.print(valor);
+  /*@u8g@*/ u8g.print(mapAnalogToByte(valor));
 }
 
 void drawValue2(byte valor)
@@ -1059,6 +1135,11 @@ void drawValue2(byte valor)
   /*@u8g@*/   u8g.setPrintPos(1, 34);
   /*@u8g@*/   u8g.print(valor);
   /*@u8g@*/ } while(u8g.nextPage());
+}
+
+byte mapAnalogToByte(unsigned int val)
+{
+  return map(val, 0, AnalogsMaxValue, 0, 255);
 }
 
 #define numbOfMappingPoints 5

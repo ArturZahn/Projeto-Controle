@@ -75,6 +75,8 @@ int Refs[nf];
 int iFilter = 0;
 unsigned long lastVoltageInterval = 0;
 
+int camera = 0;
+
 void recivePack() {
   radio.read(&TX_Pack, sizeof(TX_Pack));
 
@@ -82,6 +84,14 @@ void recivePack() {
   radio.write(&RX_Pack, sizeof(RX_Pack));
 
   radio.startListening();
+
+
+  camera += (int)(TX_Pack.x1)-128;
+  if(camera < 0) camera = 0;
+  else if(camera > 169*20) camera = 169*20;
+
+  Serial.println(camera);
+
 }
 
 void setup(void)
@@ -178,7 +188,7 @@ void loop(void)
     {
       RX_Pack.batteryVoltage = map(somaVolts, 0, somaRefs, 0, 1000)/100.00;
       
-  /*
+      /*
       Serial.print(RX_Pack.batteryVoltage);
       Serial.print(" ");
       Serial.print(somaVolts);
@@ -195,17 +205,17 @@ void loop(void)
   }
   
 
-  Serial.print(255);
-  Serial.print(" ");
-  Serial.print(0);
-  Serial.print(" ");
-  Serial.print(TX_Pack.x1);
-  Serial.print(" ");
-  Serial.print(TX_Pack.y1);
-  Serial.print(" ");
-  Serial.print(TX_Pack.x2);
-  Serial.print(" ");
-  Serial.println(TX_Pack.y2);
+  // Serial.print(255);
+  // Serial.print(" ");
+  // Serial.print(0);
+  // Serial.print(" ");
+  // Serial.print(TX_Pack.x1);
+  // Serial.print(" ");
+  // Serial.print(TX_Pack.y1);
+  // Serial.print(" ");
+  // Serial.print(TX_Pack.x2);
+  // Serial.print(" ");
+  // Serial.println(TX_Pack.y2);
 
 
   asd2++;
@@ -223,7 +233,7 @@ void loop(void)
   servo2 = TX_Pack.y1;
   servo3 = TX_Pack.x2;
   servo4 = TX_Pack.y2;*/
-  servo1.write(TX_Pack.x1);
+  servo1.write(camera/20);
   servo2.write(TX_Pack.y1);
   servo3.write(TX_Pack.x2);
   servo4.write(TX_Pack.y2);
