@@ -1,8 +1,24 @@
+#include <Arduino.h>
 #include <SPI.h>
 #include <RF24.h>
 #include <printf.h>
 #include <EEPROM.h>
-/*@u8g@*/ #include "U8glib.h"
+// /*@u8g@*/ #include "U8glib.h"
+// /*@u8g@*/ #include "U8glib.h"
+#include "U8glib.h"
+
+
+
+#define MODE_BARCO 1
+#define MODE_DRONE 2
+
+#define MODE MODE_DRONE
+
+#if MODE == MODE_BARCO
+#elif MODE == MODE_DRONE
+  #define ARM_DRONE
+#endif
+
 
 #define COUNT 10 // number for statistics
 #define nFilterSignal 100
@@ -51,7 +67,9 @@ double lastInternalBattery = 0.00;
 #define logAnalogs false
 #define logAnalogsMappedToByte false
 #define logOutput false
+
 #define logLimitAdnMiddleAdjust false
+#define limitAdnMiddleAdjustAxis 3
 
 #define logInternalBatteryVoltage false
 
@@ -70,9 +88,9 @@ typedef struct
   byte y1;
   byte x2;
   byte y2;
-}
-controlDef;
-controlDef TX_Pack;
+  byte arm_drone;
+} TX_Pack_def;
+TX_Pack_def TX_Pack;
 
 typedef struct
 {
@@ -181,21 +199,21 @@ byte lastJIni = 0;
 
 typedef struct
 {
-  unsigned int ajMin[4] = {0, 0, 0, 0};
-  unsigned int ajMax[4] = {1023, 1023, 1023, 1023};
-  // unsigned int ajMin[4] = {2, 878, 819, 18};
-  // unsigned int ajMax[4] = {968, 21, 0, 846};
+  // unsigned int ajMin[4] = {0, 0, 0, 0};
+  // unsigned int ajMax[4] = {1023, 1023, 1023, 1023};
+  unsigned int ajMin[4] = {2, 878, 950, 18};
+  unsigned int ajMax[4] = {968, 25, 71, 846};
   // unsigned int mid[4][2];
   unsigned int mid[4][2] = {
-    {512, 512},
-    {512, 512},
-    {512, 512},
-    {512, 512}
+    // {512, 512},
+    // {512, 512},
+    // {512, 512},
+    // {512, 512}
 
-    // {444, 513}, //normal
-    // {512, 512}, //invertido (nao calibrado)
-    // {466, 374}, //invertido
-    // {397, 427}  //normal
+    {444, 513}, //normal
+    {512, 512}, //invertido (nao calibrado)
+    {553, 488}, //invertido
+    {395, 427}  //normal
   };
   byte midEnabled = B1101;
   byte saida[2][4] = {
@@ -206,17 +224,41 @@ typedef struct
 eepromStuff;
 eepromStuff e;
 
+
+//////////////////////// function headers ////////////////////////
+void saveToEEPROM();
+void loadFromEEPROM();
+bool ensureMiddleAdjustIsRight();
+void readBattery();
+void sendPack();
+void refreshMenuPrincipal();
+void refreshMenuPrincipal(bool forceUpdate);
+void setup();
+void loop();
+void readButtons();
+byte pag(byte menu, byte item);
+void refreshMenuEntradas();
+int normalize(int value, int maxV, int minV);
+void readAnalogs();
+void computeFilter(unsigned int *rawPointer, unsigned int *analogPointer, byte *txpackPointer, byte readingPin, byte axisNum);
+unsigned int calcAnalogValue(unsigned int *rawPointer, byte *axisNumPoiner);
+void openMainMenu();
+void drawValue1(unsigned int valor);
+void drawValue2(byte valor);
+byte mapAnalogToByte(unsigned int val);
+//////////////////////////////////////////////////////////////////
+
+
 void saveToEEPROM()
 {
-  ensureMiddleAdjustIsRight();
-  EEPROM.put(0, e);
+  // ensureMiddleAdjustIsRight();
+  // EEPROM.put(0, e);
 }
 
 void loadFromEEPROM()
 {
-  EEPROM.get(0, e);
-  if(ensureMiddleAdjustIsRight()) EEPROM.put(0, e);
-  // EEPROM.put(0, e);
+  // EEPROM.get(0, e);
+  // if(ensureMiddleAdjustIsRight()) EEPROM.put(0, e);
 }
 
 bool ensureMiddleAdjustIsRight()
@@ -345,13 +387,13 @@ void refreshMenuPrincipal()
 }
 void refreshMenuPrincipal(bool forceUpdate)
 {
+  Serial.print("refreshMenuPrincipal ");
+  Serial.println(forceUpdate);
   // if there isn't new values and it dont want to force the update, do not update screen
   if((lastVoltage == RX_Pack.batteryVoltage) && (lastRatio == ratio) && (lastInternalBattery == internalBattery) && !forceUpdate) 
   {
-    Serial.println("nop");
     return;
   }
-  Serial.println("update");
 
   /*@u8g@*/ u8g.setDefaultForegroundColor();
   /*@u8g@*/ u8g.firstPage();  
@@ -454,6 +496,8 @@ void setup()
   TIMSK2 = 0x01; //Disable Compare Match A interrupt enable
   TIFR2 = 0x01; // Enable Interrupt in TIFR2-Register
 
+  TX_Pack.arm_drone = 0;
+
   //envia pacotes e atualiza tela no inicio
   sendPack();
   sendPack();
@@ -465,7 +509,7 @@ void setup()
   sendPack();
   sendPack();
   sendPack();
-  refreshMenuPrincipal();
+  refreshMenuPrincipal(true);
 }
 unsigned long LM = 0;
 void loop()
@@ -474,7 +518,24 @@ void loop()
   readButtons();
   readBattery();
 
-  if(bitRead(botoes, botEnter)==1) buttonPressed();
+  
+  int buttunsPressendCount = 0;
+  if(bitRead(botoes, botUp)==1) buttunsPressendCount++;
+  if(bitRead(botoes, botDown)==1) buttunsPressendCount++;
+  if(bitRead(botoes, botEnter)==1) buttunsPressendCount++;
+  if(bitRead(botoes, botReturn)==1) buttunsPressendCount++;
+
+  // dont do anything if more than one button is pressed
+  if(buttunsPressendCount == 1)
+  {
+    if(bitRead(botoes, botEnter)==1) openMainMenu();
+    #ifdef ARM_DRONE
+    else if(bitRead(botoes, botUp)==1) TX_Pack.arm_drone = 192;
+    else if(bitRead(botoes, botDown)==1) TX_Pack.arm_drone = 0;
+    #endif
+  }
+
+
   
   ///*Serial.print(botoes, BIN);
   //Serial.print(" ");
@@ -774,6 +835,7 @@ void readAnalogs()
   computeFilter(&AnalogsRaw.y1, &Analogs.y1, &TX_Pack.y1, inputY1, 1);
   computeFilter(&AnalogsRaw.x2, &Analogs.x2, &TX_Pack.x2, inputX2, 2);
   computeFilter(&AnalogsRaw.y2, &Analogs.y2, &TX_Pack.y2, inputY2, 3);
+  // Serial.println();
 
   #if logLimitAdnMiddleAdjust
   Serial.println(" |");
@@ -804,13 +866,20 @@ void computeFilter(unsigned int *rawPointer, unsigned int *analogPointer, byte *
   if(deviation < 0) deviation = -deviation;
   analogsRawSum[axisNum] += deviation;
   
+  #if !logLimitAdnMiddleAdjust
   if(deviation > maxDeviationToEndHolding || analogsRawNotHolding[axisNum])
   {
+  #endif
     analogsRawNotHolding[axisNum] = true;
     *rawPointer = sumValues;    
     *analogPointer = calcAnalogValue(rawPointer, &axisNum);
     *txpackPointer = map(*analogPointer, 0, AnalogsMaxValue, e.saida[1][axisNum], e.saida[0][axisNum]);
+  #if !logLimitAdnMiddleAdjust
   }
+  #endif
+
+  // Serial.print(" ");
+  // Serial.print(*txpackPointer);
 }
 
 // #define inBetween(number, value1, value2) ((number <= value1 && number >= value2)||((number >= value1 && number <= value2)))?true:false
@@ -821,35 +890,49 @@ unsigned int calcAnalogValue(unsigned int *rawPointer, byte *axisNumPoiner)
 {
   unsigned int normalized = normalize(*rawPointer, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner]);
 
-  #if logLimitAdnMiddleAdjust
+    #if logLimitAdnMiddleAdjust
+    #ifdef limitAdnMiddleAdjustAxis
+    if(*axisNumPoiner == limitAdnMiddleAdjustAxis)
+    {
+    #endif
 
-  Serial.print(" | ");
+    Serial.print(" | ");
 
-  Serial.print(*axisNumPoiner);
-  Serial.print(") ");
-  Serial.print(bitRead(e.midEnabled, *axisNumPoiner)?"E":"D");
-  Serial.print(" ");
+    Serial.print(*axisNumPoiner);
+    Serial.print(") ");
+    Serial.print(bitRead(e.midEnabled, *axisNumPoiner)?"E":"D");
+    Serial.print(" ");
 
-  Serial.print(e.ajMin[*axisNumPoiner]);
-  Serial.print("-");
-  Serial.print(e.mid[*axisNumPoiner][0]);
-  Serial.print("~");
-  Serial.print(e.mid[*axisNumPoiner][1]);
-  Serial.print("-");
-  Serial.print(e.ajMax[*axisNumPoiner]);
+    Serial.print(e.ajMin[*axisNumPoiner]);
+    Serial.print("-");
+    Serial.print(e.mid[*axisNumPoiner][0]);
+    Serial.print("~");
+    Serial.print(e.mid[*axisNumPoiner][1]);
+    Serial.print("-");
+    Serial.print(e.ajMax[*axisNumPoiner]);
 
-  Serial.print(" ");
-  Serial.print(*rawPointer);
-  Serial.print("→");
-  #endif
+    Serial.print(" ");
+    Serial.print(*rawPointer);
+    Serial.print("→");
+    #ifdef limitAdnMiddleAdjustAxis
+    }
+    #endif
+    #endif
 
   if(bitRead(e.midEnabled, *axisNumPoiner)) // if the middle position is enabled
   {
     if(inBetween(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0]))
     {
       #if logLimitAdnMiddleAdjust
-      Serial.print(map(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0], 0, AnalogsMiddleValue));
-      Serial.print(" ←");
+      #ifdef limitAdnMiddleAdjustAxis
+      if(*axisNumPoiner == limitAdnMiddleAdjustAxis)
+      {
+      #endif
+        Serial.print(map(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0], 0, AnalogsMiddleValue));
+        Serial.print(" ←");
+      #ifdef limitAdnMiddleAdjustAxis
+      }
+      #endif
       #endif
 
       return map(normalized, e.ajMin[*axisNumPoiner], e.mid[*axisNumPoiner][0], 0, AnalogsMiddleValue);
@@ -857,8 +940,15 @@ unsigned int calcAnalogValue(unsigned int *rawPointer, byte *axisNumPoiner)
     else if(inBetween(normalized, e.ajMax[*axisNumPoiner], e.mid[*axisNumPoiner][1]))
     {
       #if logLimitAdnMiddleAdjust
-      Serial.print(map(normalized, e.mid[*axisNumPoiner][1], e.ajMax[*axisNumPoiner], AnalogsMiddleValue, AnalogsMaxValue));
-      Serial.print(" →");
+      #ifdef limitAdnMiddleAdjustAxis
+      if(*axisNumPoiner == limitAdnMiddleAdjustAxis)
+      {
+      #endif
+        Serial.print(map(normalized, e.mid[*axisNumPoiner][1], e.ajMax[*axisNumPoiner], AnalogsMiddleValue, AnalogsMaxValue));
+        Serial.print(" →");
+      #ifdef limitAdnMiddleAdjustAxis
+      }
+      #endif
       #endif
 
       return map(normalized, e.mid[*axisNumPoiner][1], e.ajMax[*axisNumPoiner], AnalogsMiddleValue, AnalogsMaxValue);
@@ -866,8 +956,15 @@ unsigned int calcAnalogValue(unsigned int *rawPointer, byte *axisNumPoiner)
     else
     {
       #if logLimitAdnMiddleAdjust
-      Serial.print(AnalogsMiddleValue);
-      Serial.print(" °");
+      #ifdef limitAdnMiddleAdjustAxis
+      if(*axisNumPoiner == limitAdnMiddleAdjustAxis)
+      {
+      #endif
+        Serial.print(AnalogsMiddleValue);
+        Serial.print(" °");
+      #ifdef limitAdnMiddleAdjustAxis
+      }
+      #endif
       #endif
 
       return AnalogsMiddleValue;
@@ -876,15 +973,22 @@ unsigned int calcAnalogValue(unsigned int *rawPointer, byte *axisNumPoiner)
   else
   {
     #if logLimitAdnMiddleAdjust
-    Serial.print(map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, AnalogsMaxValue));
-    Serial.print(" X");
+    #ifdef limitAdnMiddleAdjustAxis
+    if(*axisNumPoiner == limitAdnMiddleAdjustAxis)
+    {
+    #endif
+      Serial.print(map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, AnalogsMaxValue));
+      Serial.print(" X");
+    #ifdef limitAdnMiddleAdjustAxis
+    }
+    #endif
     #endif
 
     return map(normalized, e.ajMin[*axisNumPoiner], e.ajMax[*axisNumPoiner], 0, AnalogsMaxValue);
   }
 }
 
-void buttonPressed()
+void openMainMenu()
 {
     while(bitRead(botoes, botEnter)==1){readButtons();} //espera soltar botao
     menuPrincipal = false;
@@ -1096,7 +1200,7 @@ void buttonPressed()
           {
             if(menu == 0)
             {
-              refreshMenuPrincipal();
+              refreshMenuPrincipal(true);
               menuPrincipal = true;
               break;
             }
