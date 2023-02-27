@@ -9,9 +9,15 @@
 #define MODE_DRONE 2
 
 #define MODE MODE_DRONE
+// #define MODE MODE_BARCO
 
 #if MODE == MODE_BARCO
-  #define CAMERA
+  #define CAMERA_BARCO
+  #define PWM_OUT_BARCO
+
+  #define returnToDefautPositionWhenLostSignal
+  #define returnToDefautPositionWhenIniting
+  
 
   // #define servo_x1_default_value 128
   #define servo_y1_default_value 60
@@ -19,13 +25,22 @@
   // #define servo_y2_default_value 128
 
 #elif MODE == MODE_DRONE
+  #define ARM_DRONE
+  #define CAMERA_DRONE
+  #define AUX_2_FAIL_SAFE_AND_GPS_RESCUE
+
   #define SBUS_OUT
 
-  #define servo_x1_default_value 128
-  #define servo_y1_default_value 0
-  #define servo_x2_default_value 128
-  #define servo_y2_default_value 128
+  #ifdef SBUS_OUT
+    // #define STOP_SBUS_WHEN_LOST_SIGNAL
+  #endif
+
+  // #define servo_x1_default_value 128
+  // #define servo_y1_default_value 0
+  // #define servo_x2_default_value 128
+  // #define servo_y2_default_value 128
 #endif
+
 
 
 
@@ -70,7 +85,15 @@ typedef struct
   byte y1;
   byte x2;
   byte y2;
+  #ifdef ARM_DRONE
   byte arm_drone;
+  #endif
+  #ifdef CAMERA_DRONE
+    byte camera_drone_position;
+  #endif
+  #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
+  byte aux_2_fail_safe_gps_rescue;
+  #endif
 } TX_Pack_def;
 TX_Pack_def TX_Pack;
 
@@ -92,8 +115,11 @@ int Refs[nf];
 int iFilter = 0;
 unsigned long lastVoltageInterval = 0;
 
-#ifdef CAMERA
-int camera = 0;
+#ifdef CAMERA_BARCO
+int camera_barco_position = 0;
+#endif
+#ifdef CAMERA_DRONE
+int camera_drone_position = 0;
 #endif
 
 void recivePack(){
@@ -106,11 +132,11 @@ void recivePack(){
   radio.startListening();
 
 
-  #ifdef CAMERA
-  camera += (int)(TX_Pack.x1)-128;
-  if(camera < 0) camera = 0;
-  else if(camera > 169*20) camera = 169*20;
-  // Serial.println(camera);
+  #ifdef CAMERA_BARCO
+  camera_barco_position += (int)(TX_Pack.x1)-128;
+  if(camera_barco_position < 0) camera_barco_position = 0;
+  else if(camera_barco_position > 169*20) camera_barco_position = 169*20;
+  // Serial.println(camera_barco_position);
   #endif
 
 
@@ -118,6 +144,7 @@ void recivePack(){
 
 /*---------- sbus ----------*/
 #ifdef SBUS_OUT
+
 #define RC_CHANNEL_MIN 990
 #define RC_CHANNEL_MAX 2010
 
@@ -231,20 +258,22 @@ void setup(void)
   servo3.attach(4);
   servo4.attach(5);
   
-  #ifdef servo_x1_default_value
-  TX_Pack.x1 = servo_x1_default_value;
-  #endif
-  
-  #ifdef servo_y1_default_value
-  TX_Pack.y1 = servo_y1_default_value;
-  #endif
-  
-  #ifdef servo_x2_default_value
-  TX_Pack.x2 = servo_x2_default_value;
-  #endif
-  
-  #ifdef servo_y2_default_value
-  TX_Pack.y2 = servo_y2_default_value;
+  #ifdef returnToDefautPositionWhenIniting
+    #ifdef servo_x1_default_value
+    TX_Pack.x1 = servo_x1_default_value;
+    #endif
+    
+    #ifdef servo_y1_default_value
+    TX_Pack.y1 = servo_y1_default_value;
+    #endif
+    
+    #ifdef servo_x2_default_value
+    TX_Pack.x2 = servo_x2_default_value;
+    #endif
+    
+    #ifdef servo_y2_default_value
+    TX_Pack.y2 = servo_y2_default_value;
+    #endif
   #endif
 
 
@@ -290,6 +319,7 @@ unsigned int asd2 = 0;
 unsigned int asd3 = 0;
 
 void loop(void){
+
   if(voltageIntervalStatus < nf)
   {
     lastVoltageInterval = millis();
@@ -358,17 +388,26 @@ void loop(void){
   // servo2 = TX_Pack.y1;
   // servo3 = TX_Pack.x2;
   // servo4 = TX_Pack.y2;
-  #ifdef CAMERA
-  servo1.write(camera/20);
-  #else
-  servo1.write(TX_Pack.x1);
+  #ifdef CAMERA_BARCO
+    servo1.write(camera_barco_position/20);
   #endif
-  servo2.write(TX_Pack.y1);
-  servo3.write(TX_Pack.x2);
-  servo4.write(TX_Pack.y2);
-
-  delay(2);
   
+  #ifdef PWM_OUT_BARCO
+    #ifndef CAMERA_BARCO
+      servo1.write(TX_Pack.x1);
+    #endif
+    servo2.write(TX_Pack.y1);
+    servo3.write(TX_Pack.x2);
+    servo4.write(TX_Pack.y2);
+  #endif
+
+  #ifdef CAMERA_DRONE
+    servo2.write(TX_Pack.camera_drone_position);
+  #endif
+
+  // delay(2);
+
+  bool isReceivingSignal = true;  
   if (radio.available()) 
   {
     recivePack();
@@ -376,40 +415,57 @@ void loop(void){
   }
   else if (millis() > lastRecived + 500) 
   { 
+    isReceivingSignal = false;
+
     TX_Pack.arm_drone = 0;
     //Serial.println("conexao perdida");
 
-    #ifdef servo_x1_default_value
-      TX_Pack.x1 = servo_x1_default_value;
-    #endif
-    
-    #ifdef servo_y1_default_value
-      TX_Pack.y1 = servo_y1_default_value;
-    #endif
-    
-    #ifdef servo_x2_default_value
-      TX_Pack.x2 = servo_x2_default_value;
-    #endif
-    
-    #ifdef servo_y2_default_value
-      TX_Pack.y2 = servo_y2_default_value;
+    #ifdef returnToDefautPositionWhenLostSignal
+      #ifdef servo_x1_default_value
+        TX_Pack.x1 = servo_x1_default_value;
+      #endif
+      
+      #ifdef servo_y1_default_value
+        TX_Pack.y1 = servo_y1_default_value;
+      #endif
+      
+      #ifdef servo_x2_default_value
+        TX_Pack.x2 = servo_x2_default_value;
+      #endif
+      
+      #ifdef servo_y2_default_value
+        TX_Pack.y2 = servo_y2_default_value;
+      #endif
     #endif
   }
 
   #ifdef SBUS_OUT
-    uint32_t currentMillis = millis();
-  
-  if (currentMillis > sbusTime) {
+
+    #ifdef STOP_SBUS_WHEN_LOST_SIGNAL
+    if(isReceivingSignal)
+    {
+    #endif
+
+      uint32_t currentMillis = millis();
     
-      rcChannels[0] = map(TX_Pack.x2, 0, 255, 1000, 2000);
-      rcChannels[1] = map(TX_Pack.y2, 0, 255, 1000, 2000);
-      rcChannels[3] = map(TX_Pack.x1, 0, 255, 1000, 2000);
-      rcChannels[2] = map(TX_Pack.y1, 0, 255, 1000, 2000);
+      if (currentMillis > sbusTime) {
       
-      rcChannels[4] = map(TX_Pack.arm_drone, 0, 255, 1000, 2000);
-      
-      sendPacket();
-      sbusTime = currentMillis + SBUS_UPDATE_RATE;
-  }
+        rcChannels[0] = map(TX_Pack.x2, 0, 255, 1000, 2000);
+        rcChannels[1] = map(TX_Pack.y2, 0, 255, 1000, 2000);
+        rcChannels[3] = map(TX_Pack.x1, 0, 255, 1000, 2000);
+        rcChannels[2] = map(TX_Pack.y1, 0, 255, 1000, 2000);
+        
+        rcChannels[4] = map(TX_Pack.arm_drone, 0, 255, 1000, 2000); // aux1
+        rcChannels[5] = isReceivingSignal?map(TX_Pack.aux_2_fail_safe_gps_rescue, 0, 255, 1000, 2000):1375; // aux2
+        
+        sendPacket();
+        sbusTime = currentMillis + SBUS_UPDATE_RATE;
+      }
+
+    
+    #ifdef STOP_SBUS_WHEN_LOST_SIGNAL
+    }
+    #endif
+
   #endif
 }

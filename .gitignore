@@ -1,2 +1,6 @@
 RX/.vscode/extensions.json
 TX/.vscode/extensions.json
+RX/.vscode/*
+TX/.vscode/*
+RX/.vscode/
+TX/.vscode/
