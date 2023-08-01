@@ -81,7 +81,7 @@ double lastInternalBattery = 0.00;
 #define logAnalogsRaw false
 #define logAnalogs false
 #define logAnalogsMappedToByte false
-#define logOutput false
+#define logOutput true
 
 #define logLimitAdnMiddleAdjust false
 #define limitAdnMiddleAdjustAxis 3
@@ -183,20 +183,20 @@ unsigned int it2 = 0; // variavel contadora para timer2
 
 int temp5 = 0; // leitura temporario para ajuste dos potenciometros
 
-String menus[7][5] = 
+String menus[9][5] = 
 {
-  /*0*/{"Entradas", "Saidas", "Radio", "*", ""},
+  /*0*/{"Entradas", "Saidas", "Fail Safe", "GPS Rescue", "*"},
   /*1*/{"ACB", "*", "", "", ""},
   /*2*/{"Eixo A-X", "Eixo A-Y", "Eixo B-X", "Eixo B-Y", "*"},
   /*3*/{"Maximo", "Minimo", "*", "", ""},
   /*4*/{"A-X  ", "A-Y  ", "B-X  ", "B-Y  ", "*"},
   /*5*/{"Maximo ", "Minimo ", "*", "", ""}, 
-  /*6*/{"CAB", "*", "", "", ""}
+  /*6*/{"CAB", "*", "", "", ""},
 };
 
 byte itensToMenu[6][4] =
 {
-  /*0*/{1, 4, 255, 255},
+  /*0*/{1, 4, 7, 8},
   /*1*/{2, 255, 255, 255},
   /*2*/{3, 3, 3, 3},
   /*3*/{3, 3, 255, 255},
@@ -204,7 +204,7 @@ byte itensToMenu[6][4] =
   /*5*/{6, 6, 255, 255}
 };
 
-byte returnMenu[7] =
+byte returnMenu[9] =
 {
   /*0*/255,
   /*1*/0,
@@ -212,7 +212,9 @@ byte returnMenu[7] =
   /*3*/2,
   /*4*/0,
   /*5*/4,
-  /*6*/5
+  /*6*/5,
+  /*7*/0,
+  /*8*/0,
 };
 
 byte lastMenu = 0;
@@ -484,6 +486,29 @@ void updateFailSafeAndGpsRescue()
 {
   TX_Pack.aux_2_fail_safe_gps_rescue = fail_safe_gps_rescue*64 + 32;
 }
+
+void enterFailSafeMode()
+{
+  bitSet(fail_safe_gps_rescue, 0);
+  updateFailSafeAndGpsRescue();
+}
+void leaveFailSafeMode()
+{
+  bitClear(fail_safe_gps_rescue, 0);
+  updateFailSafeAndGpsRescue();
+}
+
+void enterGpsRescueMode()
+{
+  bitSet(fail_safe_gps_rescue, 1);
+  updateFailSafeAndGpsRescue();
+}
+void leaveGpsRescueMode()
+{
+  bitClear(fail_safe_gps_rescue, 1);
+  updateFailSafeAndGpsRescue();
+}
+
 #endif
 
 void setup()
@@ -586,8 +611,9 @@ unsigned long LM = 0;
 byte lastBotoes = 0;
 bool startedHolding = false;
 bool lastIsLongClick = false;
-bool pressingReturn = false;
 unsigned long startedHoldingTime = 0;
+bool isHoldingTwo = false;
+unsigned long holdTwoStartTime = 0;
 void loop()
 {
   readAnalogs();
@@ -611,22 +637,6 @@ void loop()
   
   // Serial.print(botoes, BIN);
   // Serial.print(" - ");
-
-  
-  if( !pressingReturn && bitRead(botoes, botReturn)==1 && buttunsPressendCount > 1)
-  {
-    pressingReturn = true;
-  }
-
-  if(pressingReturn)
-  {
-    if(botoes == 0)
-    {
-      pressingReturn = false;
-    }
-    bitClear(botoes, botReturn);
-    buttunsPressendCount--;
-  }
 
   // Serial.print("\n");
 
@@ -672,116 +682,116 @@ void loop()
     // Serial.print(" | ");
     ////////////// ↑ click down and long click detection ↑ //////////////
 
-    if(pressingReturn)
-    {
-      #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
-
-        if(isClickDown)
+    #ifdef CAMERA_DRONE
+      if(isClickDown) // if the button was just pressed
+      {
+        if(bitRead(botoes, botUp)==1)
         {
-          if(bitRead(botoes, botUp)==1)
+          if(!camera_drone_is_looking_down)
           {
-            bitSet(fail_safe_gps_rescue, 0);
-            updateFailSafeAndGpsRescue();
-          }
-          if(bitRead(botoes, botDown)==1)
-          {
-            bitSet(fail_safe_gps_rescue, 1);
-            updateFailSafeAndGpsRescue();
-          }
-          if(bitRead(botoes, botEnter)==1)
-          {
-            openMainMenu();
-          }
-        }
-        
+            if(TX_Pack.camera_drone_position+CAMERA_DRONE_STEP > CAMERA_DRONE_MAX) TX_Pack.camera_drone_position = CAMERA_DRONE_MAX;
+            else TX_Pack.camera_drone_position += CAMERA_DRONE_STEP;
 
-      #endif
+            // camera_drone_press_down_start = millis();
+          }
+          else togleCameraDroneLookDown();
+        }
+        else if(bitRead(botoes, botDown)==1)
+        {
+          if(millis() - camera_drone_last_click_look_down < CAMERA_DRONE_LOOK_DOWN_DBCLICK_TIME)
+          {
+            // if its a double click
+
+            // undo the last step
+            if(TX_Pack.camera_drone_position+CAMERA_DRONE_STEP <= CAMERA_DRONE_MAX) TX_Pack.camera_drone_position += CAMERA_DRONE_STEP;
+
+            togleCameraDroneLookDown();
+          }
+          else
+          {
+            // if its a single click
+            if(!camera_drone_is_looking_down)
+            {
+              if(TX_Pack.camera_drone_position-CAMERA_DRONE_STEP < CAMERA_DRONE_MIN) TX_Pack.camera_drone_position = CAMERA_DRONE_MIN;
+              else TX_Pack.camera_drone_position -= CAMERA_DRONE_STEP;
+            }
+          }
+
+          camera_drone_last_click_look_down = millis();
+        }
+
+        #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
+          if(bitRead(botoes, botReturn)==1 || bitRead(botoes, botEnter)==1)
+          {
+            leaveFailSafeMode();
+            leaveGpsRescueMode();
+          }
+        #endif
+        
+        #ifdef ARM_DRONE
+        if(bitRead(botoes, botEnter)==1)
+        {
+          TX_Pack.arm_drone = 0;
+        }
+        else if(bitRead(botoes, botReturn)==1)
+        {
+          TX_Pack.arm_drone = 192;
+        }
+        #endif
+
+      }
+      if(isLongClick)
+      {
+        if(!camera_drone_is_looking_down && (bitRead(botoes, botUp)==1 || bitRead(botoes, botDown)==1))
+        {
+          if(isStartOfLongClick) camera_drone_initial_sliding_position = TX_Pack.camera_drone_position;
+
+          // this variable will be used to calculate the camera position
+          // here it stores the deviation from original value
+          int position_calculation_var = CAMERA_DRONE_SLIDING_SPEED*longClickElapsedTime;
+
+          // flip the direction if depending on which button is pressed
+          if(bitRead(botoes, botDown)==1) position_calculation_var *= -1;
+          
+          // calculate the position
+          position_calculation_var = camera_drone_initial_sliding_position+position_calculation_var;
+
+          // check if the position is on the defined limits
+          if(position_calculation_var < CAMERA_DRONE_MIN) position_calculation_var = CAMERA_DRONE_MIN;
+          else if(position_calculation_var > CAMERA_DRONE_MAX) position_calculation_var = CAMERA_DRONE_MAX;
+          
+          // write the final value to the pack
+          TX_Pack.camera_drone_position = position_calculation_var;
+        }
+      }
+
+    #endif
+
+    lastIsLongClick = isLongClick;
+  }
+
+  if(buttunsPressendCount == 2)
+  {
+    if(isHoldingTwo)
+    {
+      if(millis()-holdTwoStartTime > 1000) // if hold any two buttons for 1s
+      {
+
+        if(bitRead(botoes, botUp)==1 && bitRead(botoes, botDown)==1)
+        {
+          openMainMenu();
+        }
+      }
     }
     else
     {
-      #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
-        if(isClickDown && bitRead(botoes, botReturn)==1)
-        {
-          fail_safe_gps_rescue = 0;
-          updateFailSafeAndGpsRescue();
-        }
-      #endif
-
-      #ifdef ARM_DRONE
-        if(bitRead(botoes, botEnter)==1)
-        {
-          if(isClickDown) TX_Pack.arm_drone = 0;
-          else if(isLongClick) TX_Pack.arm_drone = 192;
-        }
-      #endif
-
-      #ifdef CAMERA_DRONE
-        if(isClickDown) // if the button was just pressed
-        {
-          if(bitRead(botoes, botUp)==1)
-          {
-            if(!camera_drone_is_looking_down)
-            {
-              if(TX_Pack.camera_drone_position+CAMERA_DRONE_STEP > CAMERA_DRONE_MAX) TX_Pack.camera_drone_position = CAMERA_DRONE_MAX;
-              else TX_Pack.camera_drone_position += CAMERA_DRONE_STEP;
-
-              // camera_drone_press_down_start = millis();
-            }
-            else togleCameraDroneLookDown();
-          }
-          else if(bitRead(botoes, botDown)==1)
-          {
-            if(millis() - camera_drone_last_click_look_down < CAMERA_DRONE_LOOK_DOWN_DBCLICK_TIME)
-            {
-              // if its a double click
-
-              // undo the last step
-              if(TX_Pack.camera_drone_position+CAMERA_DRONE_STEP <= CAMERA_DRONE_MAX) TX_Pack.camera_drone_position += CAMERA_DRONE_STEP;
-
-              togleCameraDroneLookDown();
-            }
-            else
-            {
-              // if its a single click
-              if(!camera_drone_is_looking_down)
-              {
-                if(TX_Pack.camera_drone_position-CAMERA_DRONE_STEP < CAMERA_DRONE_MIN) TX_Pack.camera_drone_position = CAMERA_DRONE_MIN;
-                else TX_Pack.camera_drone_position -= CAMERA_DRONE_STEP;
-              }
-            }
-
-            camera_drone_last_click_look_down = millis();
-          } 
-        }
-        if(isLongClick)
-        {
-          if(!camera_drone_is_looking_down && (bitRead(botoes, botUp)==1 || bitRead(botoes, botDown)==1))
-          {
-            if(isStartOfLongClick) camera_drone_initial_sliding_position = TX_Pack.camera_drone_position;
-
-            // this variable will be used to calculate the camera position
-            // here it stores the deviation from original value
-            int position_calculation_var = CAMERA_DRONE_SLIDING_SPEED*longClickElapsedTime;
-
-            // flip the direction if depending on which button is pressed
-            if(bitRead(botoes, botDown)==1) position_calculation_var *= -1;
-            
-            // calculate the position
-            position_calculation_var = camera_drone_initial_sliding_position+position_calculation_var;
-
-            // check if the position is on the defined limits
-            if(position_calculation_var < CAMERA_DRONE_MIN) position_calculation_var = CAMERA_DRONE_MIN;
-            else if(position_calculation_var > CAMERA_DRONE_MAX) position_calculation_var = CAMERA_DRONE_MAX;
-            
-            // write the final value to the pack
-            TX_Pack.camera_drone_position = position_calculation_var;
-          }
-        }
-
-      #endif
+      isHoldingTwo = true;
+      holdTwoStartTime = millis();
     }
-
-    lastIsLongClick = isLongClick;
+  }
+  else
+  {
+    isHoldingTwo = false;
   }
 
   lastBotoes = botoes;
@@ -842,6 +852,14 @@ void loop()
   #ifdef CAMERA_DRONE
     Serial.print(" ");
     Serial.print(TX_Pack.camera_drone_position);
+  #endif
+  #ifdef ARM_DRONE
+    Serial.print(" ");
+    Serial.print(TX_Pack.arm_drone);
+  #endif
+  #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
+    Serial.print(" ");
+    Serial.print(TX_Pack.aux_2_fail_safe_gps_rescue);
   #endif
   Serial.println(" 255 0");
   #endif
@@ -1450,11 +1468,27 @@ void openMainMenu()
               MaxMin = lastItem;
             }
 
-            if(itensToMenu[menu][item]!=255)
+            #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
+            if(menu == 0 && item == 2)
             {
-              menu = itensToMenu[menu][item];
-              item = pag(menu, 0);
+              enterFailSafeMode();
             }
+            else if(menu == 0 && item == 3)
+            {
+              enterGpsRescueMode();
+            }
+            else
+            {
+            #endif
+              if(itensToMenu[menu][item]!=255)
+              {
+                menu = itensToMenu[menu][item];
+                item = pag(menu, 0);
+              }
+            #ifdef AUX_2_FAIL_SAFE_AND_GPS_RESCUE
+            }
+            #endif
+
           }
           else if(f1==3)
           {
